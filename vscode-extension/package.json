@@ -29,8 +29,8 @@
                 "title": "ACP: Show Trace Inspector"
             },
             {
-                "command": "acp.runDemo",
-                "title": "ACP: Run Demo Agent"
+                "command": "acp.runAgent",
+                "title": "ACP: Run Agent"
             },
             {
                 "command": "acp.analyzeTrace",

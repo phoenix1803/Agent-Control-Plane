@@ -47,7 +47,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('acp.openTrace', openTraceCommand),
         vscode.commands.registerCommand('acp.showPanel', showPanelCommand),
         vscode.commands.registerCommand('acp.analyzeTrace', analyzeTraceCommand),
-        vscode.commands.registerCommand('acp.runDemo', runDemoCommand)
+        vscode.commands.registerCommand('acp.runAgent', runAgentCommand)
     );
 
     // Register tree data providers
@@ -174,12 +174,12 @@ async function analyzeTraceCommand() {
 }
 
 /**
- * Run demo agent
+ * Run agent
  */
-async function runDemoCommand() {
-    const terminal = vscode.window.createTerminal('ACP Demo');
+async function runAgentCommand() {
+    const terminal = vscode.window.createTerminal('Agent Control Plane');
     terminal.show();
-    terminal.sendText('npm run demo');
+    terminal.sendText('npm start');
 }
 
 /**

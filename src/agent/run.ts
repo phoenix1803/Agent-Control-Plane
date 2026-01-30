@@ -1,19 +1,19 @@
 /**
- * Agent Control Plane - Demo Runner
- * 
- * Runs the demo agent and generates a trace.
+ * Agent Control Plane - Agent Runner
+ *
+ * Executes an agent task and generates a trace.
  */
 
 import chalk from 'chalk';
 import { AgentRuntime, AgentConfig } from '../core/agent-runtime';
-import { createMockLLMProvider, ScenarioType } from './mock-llm';
-import { getDemoTools } from './mock-tools';
+import { createLLMProvider, ScenarioType } from './llm-provider';
+import { getTools } from './tools';
 
 const DIVIDER = '─'.repeat(60);
 
-async function runDemo(scenario: ScenarioType = 'restaurant'): Promise<void> {
+async function runAgent(scenario: ScenarioType = 'restaurant'): Promise<void> {
     console.log(chalk.cyan.bold(`\n${DIVIDER}`));
-    console.log(chalk.cyan.bold(` AGENT CONTROL PLANE - DEMO`));
+    console.log(chalk.cyan.bold(` AGENT CONTROL PLANE`));
     console.log(chalk.cyan.bold(DIVIDER));
     console.log();
 
@@ -22,10 +22,10 @@ async function runDemo(scenario: ScenarioType = 'restaurant'): Promise<void> {
 
     // Create agent configuration
     const config: AgentConfig = {
-        agentId: 'demo-restaurant-agent',
+        agentId: 'restaurant-booking-agent',
         maxSteps: 10,
-        llmProvider: createMockLLMProvider(scenario),
-        tools: getDemoTools(),
+        llmProvider: createLLMProvider(scenario),
+        tools: getTools(),
         systemPrompt: 'You are a helpful restaurant booking assistant.',
         outputDir: './traces',
         onStepComplete: (step, state) => {
@@ -81,7 +81,7 @@ async function runDemo(scenario: ScenarioType = 'restaurant'): Promise<void> {
     console.log(chalk.white(`    npm run analyze ${result.traceFile}`));
     console.log();
     console.log(chalk.gray('  Replay the trace:'));
-    console.log(chalk.white(`    npm run demo:replay ${result.traceFile}`));
+    console.log(chalk.white(`    npm run replay ${result.traceFile}`));
     console.log();
 }
 
@@ -89,4 +89,4 @@ async function runDemo(scenario: ScenarioType = 'restaurant'): Promise<void> {
 const args = process.argv.slice(2);
 const scenario = args.includes('--broken') ? 'broken' : 'restaurant';
 
-runDemo(scenario).catch(console.error);
+runAgent(scenario).catch(console.error);

@@ -9,10 +9,9 @@
     },
     "scripts": {
         "build": "tsc",
-        "start": "node dist/index.js",
-        "dev": "ts-node src/index.ts",
-        "demo": "ts-node src/demo/run-demo.ts",
-        "demo:replay": "ts-node src/demo/replay-demo.ts",
+        "start": "ts-node src/agent/run.ts",
+        "run:agent": "ts-node src/agent/run.ts",
+        "replay": "ts-node src/agent/replay.ts",
         "inspect": "ts-node src/cli/inspect.ts",
         "test": "ts-node src/cli/test-runner.ts",
         "analyze": "ts-node src/cli/analyze.ts",

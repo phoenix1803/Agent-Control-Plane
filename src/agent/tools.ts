@@ -1,15 +1,15 @@
 /**
- * Agent Control Plane - Demo Mock Tools
- * 
- * Mock tools for the restaurant booking demo.
+ * Agent Control Plane - Agent Tools
+ *
+ * Tools for the restaurant booking agent.
  */
 
 import { ToolDefinition, ToolResult } from '../core/types';
 
 /**
- * Mock restaurant data
+ * Restaurant data
  */
-const MOCK_RESTAURANTS = [
+const RESTAURANTS = [
     {
         name: 'Bella Italia',
         cuisine: 'italian',
@@ -61,7 +61,7 @@ export const searchRestaurantsTool: ToolDefinition = {
         // Simulate API delay
         await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
 
-        const results = MOCK_RESTAURANTS.filter(
+        const results = RESTAURANTS.filter(
             r => r.cuisine.toLowerCase() === cuisine.toLowerCase() &&
                 r.location.toLowerCase() === location.toLowerCase()
         );
@@ -98,7 +98,7 @@ export const checkAvailabilityTool: ToolDefinition = {
         // Simulate API delay
         await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
 
-        const restaurant = MOCK_RESTAURANTS.find(
+        const restaurant = RESTAURANTS.find(
             r => r.name.toLowerCase() === restaurantName.toLowerCase()
         );
 
@@ -143,7 +143,7 @@ export const bookRestaurantTool: ToolDefinition = {
         // Simulate API delay
         await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));
 
-        const restaurant = MOCK_RESTAURANTS.find(
+        const restaurant = RESTAURANTS.find(
             r => r.name.toLowerCase() === restaurantName.toLowerCase()
         );
 
@@ -184,7 +184,7 @@ export const bookRestaurantTool: ToolDefinition = {
 /**
  * Get all demo tools
  */
-export function getDemoTools(): ToolDefinition[] {
+export function getTools(): ToolDefinition[] {
     return [
         searchRestaurantsTool,
         checkAvailabilityTool,

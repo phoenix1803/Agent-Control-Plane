@@ -1,6 +1,6 @@
 /**
- * Agent Control Plane - Demo Replay
- * 
+ * Agent Control Plane - Trace Replay
+ *
  * Replays a trace to verify deterministic behavior.
  */
 
@@ -12,7 +12,7 @@ import { TraceRecorder } from '../core/trace-recorder';
 
 const DIVIDER = '─'.repeat(60);
 
-async function replayDemo(tracePath?: string): Promise<void> {
+async function replayTrace(tracePath?: string): Promise<void> {
     console.log(chalk.cyan.bold(`\n${DIVIDER}`));
     console.log(chalk.cyan.bold(` AGENT CONTROL PLANE - REPLAY`));
     console.log(chalk.cyan.bold(DIVIDER));
@@ -22,7 +22,7 @@ async function replayDemo(tracePath?: string): Promise<void> {
     if (!tracePath) {
         const traces = TraceRecorder.listTraces('./traces');
         if (traces.length === 0) {
-            console.log(chalk.red('No traces found. Run the demo first: npm run demo'));
+            console.log(chalk.red('No traces found. Run an agent first: npm run start'));
             return;
         }
         // Use the most recent trace
@@ -85,4 +85,4 @@ async function replayDemo(tracePath?: string): Promise<void> {
 
 // Parse command line args
 const args = process.argv.slice(2);
-replayDemo(args[0]).catch(console.error);
+replayTrace(args[0]).catch(console.error);

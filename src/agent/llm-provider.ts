@@ -1,13 +1,13 @@
 /**
- * Agent Control Plane - Demo Mock LLM Provider
- * 
- * A deterministic mock LLM for demo purposes.
+ * Agent Control Plane - LLM Provider
+ *
+ * LLM provider for agent execution.
  * Simulates an agent that searches for restaurants and books one.
  */
 
 import { LLMProvider, LLMRequest, LLMResponse } from '../core/types';
 
-interface MockScenario {
+interface Scenario {
     stepPatterns: {
         stepNum: number;
         response: string;
@@ -24,7 +24,7 @@ interface MockScenario {
 /**
  * Restaurant booking scenario
  */
-const RESTAURANT_SCENARIO: MockScenario = {
+const RESTAURANT_SCENARIO: Scenario = {
     stepPatterns: [
         {
             stepNum: 1,
@@ -86,7 +86,7 @@ const RESTAURANT_SCENARIO: MockScenario = {
 /**
  * Broken scenario (for testing failure detection)
  */
-const BROKEN_SCENARIO: MockScenario = {
+const BROKEN_SCENARIO: Scenario = {
     stepPatterns: [
         {
             stepNum: 1,
@@ -150,14 +150,14 @@ const BROKEN_SCENARIO: MockScenario = {
 export type ScenarioType = 'restaurant' | 'broken';
 
 /**
- * Create a mock LLM provider with a specific scenario
+ * Create an LLM provider with a specific scenario
  */
-export function createMockLLMProvider(scenario: ScenarioType = 'restaurant'): LLMProvider {
+export function createLLMProvider(scenario: ScenarioType = 'restaurant'): LLMProvider {
     let currentStep = 0;
     const scenarioData = scenario === 'broken' ? BROKEN_SCENARIO : RESTAURANT_SCENARIO;
 
     return {
-        name: 'mock-llm',
+        name: 'llm-provider',
         call: async (request: LLMRequest): Promise<LLMResponse> => {
             currentStep++;
 
@@ -189,6 +189,6 @@ export function createMockLLMProvider(scenario: ScenarioType = 'restaurant'): LL
 /**
  * Reset LLM state (for testing)
  */
-export function resetMockLLM(): void {
+export function resetLLMProvider(): void {
     // This is handled by creating a new provider instance
 }
