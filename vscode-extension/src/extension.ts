@@ -2,6 +2,7 @@
  * Agent Control Plane - VS Code Extension
  * 
  * Provides visual inspection of agent traces within VS Code.
+ * Includes time-travel replay controller integration.
  */
 
 import * as vscode from 'vscode';
@@ -36,8 +37,19 @@ interface Step {
     duration?: number;
 }
 
+interface ReplayControllerState {
+    state: 'idle' | 'playing' | 'paused' | 'stopped' | 'completed';
+    currentStepIndex: number;
+    totalSteps: number;
+    canPlayForward: boolean;
+    canPlayBackward: boolean;
+    progress: number;
+}
+
 let currentTrace: Trace | undefined;
 let tracePanel: vscode.WebviewPanel | undefined;
+let replayState: ReplayControllerState | undefined;
+let autoPlayInterval: NodeJS.Timeout | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Agent Control Plane extension activated');
@@ -47,7 +59,17 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('acp.openTrace', openTraceCommand),
         vscode.commands.registerCommand('acp.showPanel', showPanelCommand),
         vscode.commands.registerCommand('acp.analyzeTrace', analyzeTraceCommand),
-        vscode.commands.registerCommand('acp.runDemo', runDemoCommand)
+        vscode.commands.registerCommand('acp.runDemo', runDemoCommand),
+        // Replay controller commands
+        vscode.commands.registerCommand('acp.replay.play', replayPlayCommand),
+        vscode.commands.registerCommand('acp.replay.pause', replayPauseCommand),
+        vscode.commands.registerCommand('acp.replay.stop', replayStopCommand),
+        vscode.commands.registerCommand('acp.replay.next', replayNextCommand),
+        vscode.commands.registerCommand('acp.replay.prev', replayPrevCommand),
+        vscode.commands.registerCommand('acp.replay.start', replayStartCommand),
+        vscode.commands.registerCommand('acp.replay.end', replayEndCommand),
+        vscode.commands.registerCommand('acp.replay.jump', replayJumpCommand),
+        vscode.commands.registerCommand('acp.replay.search', replaySearchCommand)
     );
 
     // Register tree data providers
@@ -97,6 +119,9 @@ async function openTraceCommand(uri?: vscode.Uri) {
     try {
         const content = fs.readFileSync(tracePath, 'utf-8');
         currentTrace = JSON.parse(content) as Trace;
+
+        // Initialize replay state
+        initializeReplayState();
 
         // Refresh steps view
         vscode.commands.executeCommand('acp.stepsView.focus');
@@ -183,6 +208,221 @@ async function runDemoCommand() {
 }
 
 /**
+ * Replay Controller Commands
+ */
+
+function initializeReplayState() {
+    if (!currentTrace) {
+        vscode.window.showWarningMessage('No trace loaded');
+        return;
+    }
+
+    replayState = {
+        state: 'idle',
+        currentStepIndex: 0,
+        totalSteps: currentTrace.steps.length,
+        canPlayForward: true,
+        canPlayBackward: false,
+        progress: 0,
+    };
+}
+
+async function replayPlayCommand() {
+    if (!replayState) initializeReplayState();
+    if (!replayState) return;
+
+    replayState.state = 'playing';
+    updateReplayUI();
+
+    autoPlayInterval = setInterval(() => {
+        if (!replayState || !currentTrace) return;
+
+        if (replayState.currentStepIndex < currentTrace.steps.length - 1) {
+            replayState.currentStepIndex++;
+            updateReplayState();
+            updateReplayUI();
+        } else {
+            stopAutoPlay();
+            replayState.state = 'completed';
+            updateReplayUI();
+        }
+    }, 1000);
+}
+
+async function replayPauseCommand() {
+    if (!replayState) initializeReplayState();
+    if (!replayState) return;
+
+    stopAutoPlay();
+    replayState.state = 'paused';
+    updateReplayUI();
+}
+
+async function replayStopCommand() {
+    stopAutoPlay();
+    if (replayState) {
+        replayState.state = 'stopped';
+        replayState.currentStepIndex = 0;
+        updateReplayState();
+        updateReplayUI();
+    }
+}
+
+async function replayNextCommand() {
+    if (!replayState) initializeReplayState();
+    if (!replayState || !currentTrace) return;
+
+    stopAutoPlay();
+
+    if (replayState.currentStepIndex < currentTrace.steps.length - 1) {
+        replayState.currentStepIndex++;
+        updateReplayState();
+    }
+
+    replayState.state = 'paused';
+    updateReplayUI();
+}
+
+async function replayPrevCommand() {
+    if (!replayState) initializeReplayState();
+    if (!replayState) return;
+
+    stopAutoPlay();
+
+    if (replayState.currentStepIndex > 0) {
+        replayState.currentStepIndex--;
+        updateReplayState();
+    }
+
+    replayState.state = 'paused';
+    updateReplayUI();
+}
+
+async function replayStartCommand() {
+    if (!replayState) initializeReplayState();
+    if (!replayState) return;
+
+    stopAutoPlay();
+    replayState.currentStepIndex = 0;
+    updateReplayState();
+    replayState.state = 'paused';
+    updateReplayUI();
+}
+
+async function replayEndCommand() {
+    if (!replayState) initializeReplayState();
+    if (!replayState || !currentTrace) return;
+
+    stopAutoPlay();
+    replayState.currentStepIndex = currentTrace.steps.length - 1;
+    updateReplayState();
+    replayState.state = 'paused';
+    updateReplayUI();
+}
+
+async function replayJumpCommand() {
+    if (!replayState || !currentTrace) {
+        vscode.window.showWarningMessage('No trace loaded');
+        return;
+    }
+
+    const input = await vscode.window.showInputBox({
+        prompt: `Enter step number (0-${currentTrace.steps.length - 1}):`,
+        value: replayState.currentStepIndex.toString(),
+        validateInput: (value) => {
+            const num = parseInt(value);
+            if (isNaN(num) || num < 0 || num >= currentTrace!.steps.length) {
+                return `Enter a number between 0 and ${currentTrace!.steps.length - 1}`;
+            }
+            return '';
+        },
+    });
+
+    if (input !== undefined) {
+        stopAutoPlay();
+        replayState.currentStepIndex = parseInt(input);
+        updateReplayState();
+        replayState.state = 'paused';
+        updateReplayUI();
+    }
+}
+
+async function replaySearchCommand() {
+    if (!currentTrace) {
+        vscode.window.showWarningMessage('No trace loaded');
+        return;
+    }
+
+    const query = await vscode.window.showInputBox({
+        prompt: 'Search for text in steps:',
+    });
+
+    if (!query) return;
+
+    const results = currentTrace.steps.filter(step => {
+        const inputStr = JSON.stringify(step.input).toLowerCase();
+        const outputStr = JSON.stringify(step.output).toLowerCase();
+        return inputStr.includes(query.toLowerCase()) || outputStr.includes(query.toLowerCase());
+    });
+
+    if (results.length === 0) {
+        vscode.window.showInformationMessage('No steps found matching your search.');
+        return;
+    }
+
+    // Jump to first result
+    if (replayState) {
+        replayState.currentStepIndex = results[0].stepNumber - 1; // Convert 1-based to 0-based
+        updateReplayState();
+        updateReplayUI();
+    }
+
+    vscode.window.showInformationMessage(
+        `Found ${results.length} step(s). Jumped to first result.`
+    );
+}
+
+function updateReplayState() {
+    if (!replayState || !currentTrace) return;
+
+    replayState.canPlayForward = replayState.currentStepIndex < currentTrace.steps.length - 1;
+    replayState.canPlayBackward = replayState.currentStepIndex > 0;
+    replayState.progress = Math.round((replayState.currentStepIndex / currentTrace.steps.length) * 100);
+
+    // Refresh the panel with current step
+    if (tracePanel) {
+        tracePanel.webview.postMessage({
+            type: 'updateReplayState',
+            state: replayState,
+            currentStep: currentTrace.steps[replayState.currentStepIndex],
+        });
+    }
+}
+
+function updateReplayUI() {
+    if (!replayState) return;
+
+    // Update status bar
+    const icon = replayState.state === 'playing' ? '▶️' : replayState.state === 'paused' ? '⏸️' : '⏹️';
+    const statusText = `${icon} ${replayState.progress}% [${replayState.currentStepIndex}/${replayState.totalSteps}]`;
+
+    // Refresh panel
+    if (tracePanel) {
+        tracePanel.webview.postMessage({
+            type: 'updateReplayUI',
+            state: replayState,
+        });
+    }
+}
+
+function stopAutoPlay() {
+    if (autoPlayInterval) {
+        clearInterval(autoPlayInterval);
+        autoPlayInterval = undefined;
+    }
+}
+
+/**
  * Show trace in webview panel
  */
 function showTracePanel(trace: Trace) {
@@ -199,17 +439,60 @@ function showTracePanel(trace: Trace) {
         tracePanel.onDidDispose(() => {
             tracePanel = undefined;
         });
+
+        // Handle messages from webview
+        tracePanel.webview.onDidReceiveMessage(async (message) => {
+            switch (message.command) {
+                case 'replay.play':
+                    await replayPlayCommand();
+                    break;
+                case 'replay.pause':
+                    await replayPauseCommand();
+                    break;
+                case 'replay.stop':
+                    await replayStopCommand();
+                    break;
+                case 'replay.next':
+                    await replayNextCommand();
+                    break;
+                case 'replay.prev':
+                    await replayPrevCommand();
+                    break;
+                case 'replay.start':
+                    await replayStartCommand();
+                    break;
+                case 'replay.end':
+                    await replayEndCommand();
+                    break;
+                case 'replay.jump':
+                    await replayJumpCommand();
+                    break;
+                case 'replay.search':
+                    await replaySearchCommand();
+                    break;
+                case 'jumpToStep':
+                    if (replayState) {
+                        replayState.currentStepIndex = message.step - 1; // Convert 1-based to 0-based
+                        updateReplayState();
+                        updateReplayUI();
+                    }
+                    break;
+            }
+        });
     }
 
     tracePanel.webview.html = getWebviewContent(trace);
 }
 
 /**
- * Generate webview HTML
+ * Generate webview HTML with replay controls
  */
 function getWebviewContent(trace: Trace): string {
+    const currentStep = replayState ? trace.steps[replayState.currentStepIndex] : trace.steps[0];
+    const progress = replayState ? replayState.progress : 0;
+    
     const stepsHtml = trace.steps.map(step => `
-    <div class="step ${step.stepType}" onclick="showStep(${step.stepNumber})">
+    <div class="step ${step.stepType}" data-step="${step.stepNumber}" ${replayState?.currentStepIndex === step.stepNumber ? 'selected' : ''}>
       <div class="step-header">
         <span class="step-num">${step.stepNumber}</span>
         <span class="step-type">${step.stepType.toUpperCase()}</span>
@@ -238,6 +521,51 @@ function getWebviewContent(trace: Trace): string {
         .header h1 {
           margin: 0 0 10px 0;
           font-size: 18px;
+        }
+        .replay-controls {
+          display: flex;
+          gap: 8px;
+          margin: 15px 0;
+          padding: 12px;
+          background: var(--vscode-editor-inactiveSelectionBackground);
+          border-radius: 4px;
+          align-items: center;
+        }
+        .replay-button {
+          background: var(--vscode-button-background);
+          color: var(--vscode-button-foreground);
+          border: none;
+          padding: 6px 12px;
+          border-radius: 3px;
+          cursor: pointer;
+          font-size: 12px;
+          font-family: var(--vscode-font-family);
+        }
+        .replay-button:hover {
+          background: var(--vscode-button-hoverBackground);
+        }
+        .replay-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .progress-bar {
+          flex: 1;
+          height: 6px;
+          background: var(--vscode-panel-border);
+          border-radius: 3px;
+          overflow: hidden;
+        }
+        .progress-fill {
+          height: 100%;
+          background: var(--vscode-progressBar-background);
+          width: ${progress}%;
+          transition: width 0.2s;
+        }
+        .progress-text {
+          font-size: 11px;
+          color: var(--vscode-descriptionForeground);
+          min-width: 80px;
+          text-align: right;
         }
         .meta {
           display: grid;
@@ -308,9 +636,8 @@ function getWebviewContent(trace: Trace): string {
         .step.error .step-type { background: #f44336; }
         .step.decision .step-type { background: #FF9800; }
         .step-time {
-          font-size: 10px;
+          font-size: 11px;
           color: var(--vscode-descriptionForeground);
-          margin-left: auto;
         }
         .step-summary {
           font-size: 12px;
@@ -320,27 +647,22 @@ function getWebviewContent(trace: Trace): string {
           text-overflow: ellipsis;
         }
         pre {
-          background: var(--vscode-textBlockQuote-background);
+          background: var(--vscode-textCodeBlock-background);
           padding: 10px;
           border-radius: 4px;
           overflow-x: auto;
-          font-size: 12px;
+          max-height: 300px;
         }
-        h3 {
-          margin-top: 15px;
-          margin-bottom: 5px;
-          font-size: 14px;
+        code {
+          font-family: var(--vscode-editor-font-family);
+          font-size: 12px;
         }
       </style>
     </head>
     <body>
       <div class="header">
-        <h1>🔍 Trace Inspector</h1>
+        <h1>${trace.traceId}</h1>
         <div class="meta">
-          <div class="meta-item">
-            <span class="meta-label">Trace ID</span>
-            <span>${trace.traceId}</span>
-          </div>
           <div class="meta-item">
             <span class="meta-label">Status</span>
             <span>${trace.status}</span>
@@ -350,64 +672,102 @@ function getWebviewContent(trace: Trace): string {
             <span>${trace.steps.length}</span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">LLM Calls</span>
-            <span>${trace.metadata.totalLLMCalls}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Tool Calls</span>
-            <span>${trace.metadata.totalToolCalls}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">Tools Used</span>
-            <span>${trace.metadata.toolsUsed.join(', ') || 'None'}</span>
+            <span class="meta-label">Duration</span>
+            <span>${trace.endTime ? Math.round((new Date(trace.endTime).getTime() - new Date(trace.startTime).getTime()) / 1000) : 0}s</span>
           </div>
         </div>
       </div>
-      
+
+      <div class="replay-controls">
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.start'})">⏮ Start</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.prev'})" ${replayState?.canPlayBackward ? '' : 'disabled'}>◀ Prev</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.play'})">▶ Play</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.pause'})">⏸ Pause</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.next'})" ${replayState?.canPlayForward ? '' : 'disabled'}>Next ▶</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.end'})">End ⏭</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.jump'})">🎯 Jump</button>
+        <button class="replay-button" onclick="vscode.postMessage({command: 'replay.search'})">🔍 Search</button>
+        <div class="progress-bar">
+          <div class="progress-fill"></div>
+        </div>
+        <div class="progress-text">${replayState?.progress || 0}%</div>
+      </div>
+
       <div class="steps-container">
         <div class="steps-list">
-          <h2>Steps</h2>
-          ${stepsHtml}
+          <h3>Steps</h3>
+          <div id="stepsList">
+            ${stepsHtml}
+          </div>
         </div>
-        <div class="step-detail" id="stepDetail">
-          <p>Click a step to see details</p>
+        <div class="step-detail active" id="stepDetail">
+          <h3>Current Step: <span id="stepNum">${currentStep.stepNumber}</span> (<span id="stepType">${currentStep.stepType.toUpperCase()}</span>)</h3>
+          <h4>Input</h4>
+          <pre><code id="stepInput">${JSON.stringify(currentStep.input, null, 2)}</code></pre>
+          <h4>Output</h4>
+          <pre><code id="stepOutput">${JSON.stringify(currentStep.output, null, 2)}</code></pre>
+          <h4>Timestamp</h4>
+          <p id="stepTime">${currentStep.timestamp}</p>
         </div>
       </div>
 
       <script>
+        const vscode = acquireVsCodeApi();
         const trace = ${JSON.stringify(trace)};
         
-        function showStep(stepNum) {
+        // Attach click handlers to all steps
+        function attachStepListeners() {
+          const steps = document.querySelectorAll('.step');
+          steps.forEach(stepEl => {
+            stepEl.addEventListener('click', function() {
+              const stepNum = parseInt(this.getAttribute('data-step'));
+              vscode.postMessage({ command: 'jumpToStep', step: stepNum });
+            });
+          });
+        }
+        
+        // Update step detail view
+        function updateStepDetail(stepNum) {
           const step = trace.steps.find(s => s.stepNumber === stepNum);
           if (!step) return;
           
-          // Update selection
+          // Update selected class
           document.querySelectorAll('.step').forEach(el => el.classList.remove('selected'));
-          document.querySelector('.step:nth-child(' + stepNum + ')').classList.add('selected');
+          const selected = document.querySelector('[data-step="' + stepNum + '"]');
+          if (selected) selected.classList.add('selected');
           
-          // Show detail
-          const detail = document.getElementById('stepDetail');
-          detail.classList.add('active');
-          detail.innerHTML = \`
-            <h2>Step \${step.stepNumber} - \${step.stepType.toUpperCase()}</h2>
-            <p><strong>Timestamp:</strong> \${step.timestamp}</p>
-            <p><strong>Duration:</strong> \${step.duration || 0}ms</p>
-            
-            <h3>Input</h3>
-            <pre>\${JSON.stringify(step.input, null, 2)}</pre>
-            
-            <h3>Output</h3>
-            <pre>\${JSON.stringify(step.output, null, 2)}</pre>
-            
-            <h3>State Snapshot</h3>
-            <pre>\${JSON.stringify(step.stateSnapshot, null, 2)}</pre>
-          \`;
+          // Scroll into view
+          if (selected) selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          
+          // Update detail panel
+          document.getElementById('stepNum').textContent = step.stepNumber;
+          document.getElementById('stepType').textContent = step.stepType.toUpperCase();
+          document.getElementById('stepInput').textContent = JSON.stringify(step.input, null, 2);
+          document.getElementById('stepOutput').textContent = JSON.stringify(step.output, null, 2);
+          document.getElementById('stepTime').textContent = step.timestamp;
         }
         
-        // Auto-select first step
-        if (trace.steps.length > 0) {
-          showStep(1);
-        }
+        // Listen for updates from extension
+        window.addEventListener('message', event => {
+          const message = event.data;
+          if (message.type === 'updateReplayState' && message.currentStep) {
+            updateStepDetail(message.currentStep.stepNumber);
+          } else if (message.type === 'updateReplayUI' && message.state) {
+            const progress = Math.round((message.state.currentStepIndex / trace.steps.length) * 100);
+            const progressFill = document.querySelector('.progress-fill');
+            if (progressFill) {
+              progressFill.style.width = progress + '%';
+            }
+            const progressText = document.querySelector('.progress-text');
+            if (progressText) {
+              progressText.textContent = progress + '%';
+            }
+          }
+        });
+        
+        // Initialize
+        attachStepListeners();
+        updateStepDetail(${currentStep.stepNumber});
       </script>
     </body>
     </html>
