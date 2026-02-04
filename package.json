@@ -18,8 +18,9 @@
         "analyze": "ts-node src/cli/analyze.ts",
         "lint": "eslint src/**/*.ts",
         "ext:build": "cd vscode-extension && npm install && npm run compile",
-        "ext:open": "code --extensionDevelopmentPath=vscode-extension .",
-        "ext:dev": "npm run build && npm run ext:open"
+        "ext:open": "npm run ext:build && code --extensionDevelopmentPath=vscode-extension .",
+        "ext:dev": "npm run build && npm run ext:build && code --extensionDevelopmentPath=vscode-extension .",
+        "ext:quick": "code --extensionDevelopmentPath=vscode-extension ."
     },
     "keywords": [
         "agent",
