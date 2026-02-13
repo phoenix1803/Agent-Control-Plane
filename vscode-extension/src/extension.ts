@@ -4,8 +4,6 @@
  * Provides visual inspection of agent traces within VS Code.
  * Includes time-travel replay controller integration.
  */
-import { StepInspector } from "../../dist/core/step-inspector";
-
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
@@ -51,7 +49,66 @@ let currentTrace: Trace | undefined;
 let tracePanel: vscode.WebviewPanel | undefined;
 let replayState: ReplayControllerState | undefined;
 let autoPlayInterval: NodeJS.Timeout | undefined;
-let inspector: StepInspector | undefined;
+
+/**
+ * Simple step inspector that formats step data
+ */
+function inspectStep(step: Step): {
+  stepNumber: number;
+  stepType: string;
+  timestamp: string;
+  duration: number;
+  input: { raw: unknown; formatted: string; summary: string };
+  output: { raw: unknown; formatted: string; summary: string };
+} {
+  // Format input
+  const inputFormatted = JSON.stringify(step.input, null, 2);
+  let inputSummary = "";
+  
+  if (step.stepType === "llm") {
+    const llmInput = step.input as any;
+    inputSummary = `Prompt: ${(llmInput.prompt || "").substring(0, 100)}...`;
+  } else if (step.stepType === "tool") {
+    const toolInput = step.input as any;
+    inputSummary = `Tool: ${toolInput.toolName}, Params: ${JSON.stringify(toolInput.parameters)}`;
+  } else {
+    inputSummary = inputFormatted.substring(0, 100);
+  }
+
+  // Format output
+  const outputFormatted = JSON.stringify(step.output, null, 2);
+  let outputSummary = "";
+  
+  if (step.stepType === "llm") {
+    const llmOutput = step.output as any;
+    outputSummary = `Response: ${(llmOutput.response || "").substring(0, 100)}...`;
+  } else if (step.stepType === "tool") {
+    const toolOutput = step.output as any;
+    outputSummary = `Success: ${toolOutput.success}, Result: ${JSON.stringify(toolOutput.result || "").substring(0, 50)}`;
+  } else if (step.stepType === "error") {
+    const errorOutput = step.output as any;
+    outputSummary = `Error: ${errorOutput.error}`;
+  } else {
+    outputSummary = outputFormatted.substring(0, 100);
+  }
+
+  return {
+    stepNumber: step.stepNumber,
+    stepType: step.stepType,
+    timestamp: step.timestamp,
+    duration: step.duration || 0,
+    input: {
+      raw: step.input,
+      formatted: inputFormatted,
+      summary: inputSummary,
+    },
+    output: {
+      raw: step.output,
+      formatted: outputFormatted,
+      summary: outputSummary,
+    },
+  };
+}
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Agent Control Plane extension activated");
@@ -71,7 +128,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("acp.replay.start", replayStartCommand),
     vscode.commands.registerCommand("acp.replay.end", replayEndCommand),
     vscode.commands.registerCommand("acp.replay.jump", replayJumpCommand),
-    vscode.commands.registerCommand("acp.replay.search", replaySearchCommand),
+    vscode.commands.registerCommand("acp.replay.search", replaySearchCommand)
   );
 
   // Register tree data providers
@@ -121,7 +178,6 @@ async function openTraceCommand(uri?: vscode.Uri) {
   try {
     const content = fs.readFileSync(tracePath, "utf-8");
     currentTrace = JSON.parse(content) as Trace;
-    inspector = new StepInspector(currentTrace as any); // for inspection of seach step
 
     // Initialize replay state
     initializeReplayState();
@@ -133,7 +189,7 @@ async function openTraceCommand(uri?: vscode.Uri) {
     showTracePanel(currentTrace);
 
     vscode.window.showInformationMessage(
-      `Loaded trace: ${currentTrace.traceId}`,
+      `Loaded trace: ${currentTrace.traceId}`
     );
   } catch (error) {
     vscode.window.showErrorMessage(`Failed to load trace: ${error}`);
@@ -147,7 +203,7 @@ async function showPanelCommand() {
   if (!currentTrace) {
     const result = await vscode.window.showWarningMessage(
       "No trace loaded. Would you like to open one?",
-      "Open Trace",
+      "Open Trace"
     );
 
     if (result === "Open Trace") {
@@ -205,7 +261,7 @@ async function analyzeTraceCommand() {
 }
 
 /**
- * Run agent
+ * Run demo
  */
 async function runDemoCommand() {
   const terminal = vscode.window.createTerminal("ACP Demo");
@@ -376,7 +432,7 @@ async function replaySearchCommand() {
 
   if (results.length === 0) {
     vscode.window.showInformationMessage(
-      "No steps found matching your search.",
+      "No steps found matching your search."
     );
     return;
   }
@@ -389,23 +445,23 @@ async function replaySearchCommand() {
   }
 
   vscode.window.showInformationMessage(
-    `Found ${results.length} step(s). Jumped to first result.`,
+    `Found ${results.length} step(s). Jumped to first result.`
   );
 }
 
 function updateReplayState() {
-  if (!replayState || !currentTrace || !inspector) return;
+  if (!replayState || !currentTrace) return;
 
   replayState.canPlayForward =
     replayState.currentStepIndex < currentTrace.steps.length - 1;
   replayState.canPlayBackward = replayState.currentStepIndex > 0;
   replayState.progress = Math.round(
-    (replayState.currentStepIndex / currentTrace.steps.length) * 100,
+    (replayState.currentStepIndex / currentTrace.steps.length) * 100
   );
 
-  // Use StepInspector here
+  // Use inspectStep function here
   const step = currentTrace.steps[replayState.currentStepIndex];
-  const inspection = inspector.inspectStep(step.stepNumber);
+  const inspection = inspectStep(step);
 
   if (tracePanel) {
     tracePanel.webview.postMessage({
@@ -455,7 +511,7 @@ function showTracePanel(trace: Trace) {
       "acpTrace",
       `Trace: ${trace.traceId}`,
       vscode.ViewColumn.Two,
-      { enableScripts: true },
+      { enableScripts: true }
     );
 
     tracePanel.onDidDispose(() => {
@@ -518,7 +574,7 @@ function getWebviewContent(trace: Trace): string {
   const stepsHtml = trace.steps
     .map(
       (step) => `
-    <div class="step ${step.stepType}" data-step="${step.stepNumber}" ${replayState?.currentStepIndex === step.stepNumber ? "selected" : ""}>
+    <div class="step ${step.stepType}" data-step="${step.stepNumber}" ${replayState?.currentStepIndex === step.stepNumber - 1 ? 'selected' : ''}>
       <div class="step-header">
         <span class="step-num">${step.stepNumber}</span>
         <span class="step-type">${step.stepType.toUpperCase()}</span>
@@ -526,7 +582,7 @@ function getWebviewContent(trace: Trace): string {
       </div>
       <div class="step-summary">${getStepSummary(step)}</div>
     </div>
-  `,
+  `
     )
     .join("");
 
@@ -729,26 +785,20 @@ function getWebviewContent(trace: Trace): string {
           </div>
         </div>
         <div class="step-detail active" id="stepDetail">
-        //   <h3>Current Step: <span id="stepNum">${currentStep.stepNumber}</span> (<span id="stepType">${currentStep.stepType.toUpperCase()}</span>)</h3>
-        //   <h4>Input</h4>
-        //   <pre><code id="stepInput">${JSON.stringify(currentStep.input, null, 2)}</code></pre>
-        //   <h4>Output</h4>
-        //   <pre><code id="stepOutput">${JSON.stringify(currentStep.output, null, 2)}</code></pre>
+          <h3>
+            Current Step:
+            <span id="stepNum">–</span>
+            (<span id="stepType">–</span>)
+          </h3>
 
-        <h3>
-        Current Step:
-        <span id="stepNum">–</span>
-        (<span id="stepType">–</span>)
-        </h3>
+          <h4>Input</h4>
+          <pre><code id="stepInput">Waiting for inspection…</code></pre>
 
-        <h4>Input</h4>
-        <pre><code id="stepInput">Waiting for inspection…</code></pre>
-
-        <h4>Output</h4>
-        <pre><code id="stepOutput">Waiting for inspection…</code></pre>
+          <h4>Output</h4>
+          <pre><code id="stepOutput">Waiting for inspection…</code></pre>
 
           <h4>Timestamp</h4>
-          <p id="stepTime">${currentStep.timestamp}</p>
+          <p id="stepTime">–</p>
         </div>
       </div>
 
@@ -766,51 +816,35 @@ function getWebviewContent(trace: Trace): string {
             });
           });
         }
-        
-        // Update step detail view
-        // function updateStepDetail(stepNum) {
-        //   const step = trace.steps.find(s => s.stepNumber === stepNum);
-        //   if (!step) return;
-          
-        //   // Update selected class
-        //   document.querySelectorAll('.step').forEach(el => el.classList.remove('selected'));
-        //   const selected = document.querySelector('[data-step="' + stepNum + '"]');
-        //   if (selected) selected.classList.add('selected');
-          
-        //   // Scroll into view
-        //   if (selected) selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          
-        //   // Update detail panel
-        //   document.getElementById('stepNum').textContent = step.stepNumber;
-        //   document.getElementById('stepType').textContent = step.stepType.toUpperCase();
-        //   document.getElementById('stepInput').textContent = JSON.stringify(step.input, null, 2);
-        //   document.getElementById('stepOutput').textContent = JSON.stringify(step.output, null, 2);
-        //   document.getElementById('stepTime').textContent = step.timestamp;
-        // }
 
         function updateStepDetailFromInspection(inspection) {
-    // Highlight selected step
-    document.querySelectorAll('.step').forEach(el =>
-        el.classList.remove('selected')
-    );
+          // Highlight selected step
+          document.querySelectorAll('.step').forEach(el =>
+            el.classList.remove('selected')
+          );
 
-    const selected = document.querySelector(
-        '[data-step="' + inspection.stepNumber + '"]'
-    );
-    if (selected) selected.classList.add('selected');
+          const selected = document.querySelector(
+            '[data-step="' + inspection.stepNumber + '"]'
+          );
+          if (selected) {
+            selected.classList.add('selected');
+            selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
 
-    // Update header
-    document.getElementById('stepNum').textContent =
-        inspection.stepNumber;
-    document.getElementById('stepType').textContent =
-        inspection.stepType.toUpperCase();
+          // Update header
+          document.getElementById('stepNum').textContent =
+            inspection.stepNumber;
+          document.getElementById('stepType').textContent =
+            inspection.stepType.toUpperCase();
 
-    //  Inspector-powered data
-    document.getElementById('stepInput').textContent =
-        inspection.input.formatted;
-    document.getElementById('stepOutput').textContent =
-        inspection.output.formatted;
-}
+          // Inspector-powered data
+          document.getElementById('stepInput').textContent =
+            inspection.input.formatted;
+          document.getElementById('stepOutput').textContent =
+            inspection.output.formatted;
+          document.getElementById('stepTime').textContent =
+            inspection.timestamp;
+        }
         
         // Listen for updates from extension
         window.addEventListener('message', event => {
@@ -832,11 +866,11 @@ function getWebviewContent(trace: Trace): string {
         
         // Initialize
         attachStepListeners();
-        // updateStepDetail(${currentStep.stepNumber});
-
-
         
-
+        // Load first step on startup
+        if (trace.steps.length > 0) {
+          vscode.postMessage({ command: 'jumpToStep', step: 1 });
+        }
       </script>
     </body>
     </html>
@@ -910,14 +944,14 @@ class TracesTreeProvider implements vscode.TreeDataProvider<TraceItem> {
           trace.traceId,
           trace.status,
           filePath,
-          vscode.TreeItemCollapsibleState.None,
+          vscode.TreeItemCollapsibleState.None
         );
       } catch {
         return new TraceItem(
           file,
           "error",
           filePath,
-          vscode.TreeItemCollapsibleState.None,
+          vscode.TreeItemCollapsibleState.None
         );
       }
     });
@@ -929,7 +963,7 @@ class TraceItem extends vscode.TreeItem {
     public readonly traceId: string,
     public readonly status: string,
     public readonly filePath: string,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
   ) {
     super(traceId.replace("trace_", ""), collapsibleState);
     this.tooltip = `${traceId}\nStatus: ${status}`;
@@ -989,7 +1023,7 @@ class StepItem extends vscode.TreeItem {
     };
 
     this.iconPath = new vscode.ThemeIcon(
-      icons[step.stepType] || "circle-outline",
+      icons[step.stepType] || "circle-outline"
     );
   }
 }

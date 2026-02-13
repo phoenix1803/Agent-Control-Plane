@@ -7,6 +7,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { mainFunction } from "./vector-store/init-queue"
+
 import {
     Trace,
     Step,
@@ -193,6 +196,8 @@ export class TraceRecorder {
     /**
      * Record an error step
      */
+
+
     recordErrorStep(
         input: ErrorStep['input'],
         output: ErrorStep['output'],
@@ -299,4 +304,22 @@ export class TraceRecorder {
     private deepClone<T>(obj: T): T {
         return JSON.parse(JSON.stringify(obj));
     }
+
+    /**
+     * Add the trace to the BullMQ queue for Qdrant processing
+     */
+    private async queueTraceForIndexing(filePath: string) {
+        try {
+            mainFunction
+            console.log(`[TraceRecorder] Trace ${this.trace.traceId} queued for indexing.`);
+        } catch (error) {
+            console.error(`[TraceRecorder] Failed to queue trace:`, error);
+        }
+    }
+
+
+
+
+
+
 }

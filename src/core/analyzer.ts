@@ -40,6 +40,14 @@ export class TraceAnalyzer {
     constructor(trace: Trace, config: Partial<AnalyzerConfig> = {}) {
         this.trace = trace;
         this.config = { ...DEFAULT_CONFIG, ...config };
+
+        
+
+
+
+
+
+
     }
 
     /**
@@ -49,6 +57,15 @@ export class TraceAnalyzer {
         const trace = TraceRecorder.load(tracePath);
         return new TraceAnalyzer(trace, config);
     }
+
+
+
+
+
+
+
+
+
 
     /**
      * Run full analysis

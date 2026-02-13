@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis-secure
+    command: redis-server --requirepass "ITSMEBBy"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+
+
+  qdrant:
+    image: qdrant/qdrant
+
+    ports:
+    - 6333:6333
+
+volumes:
+  redis_data:
