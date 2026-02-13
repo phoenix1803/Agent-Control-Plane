@@ -14,7 +14,7 @@ import "dotenv/config"
 
 
 const worker = new Worker("upload_traces",async (job)=>{
-    if (job.name=== "uplaod_traces_job"){
+    if (job.name === "uplaod_traces_job"){
         console.log("Enterd in worker")
 
         try{
@@ -51,14 +51,6 @@ const worker = new Worker("upload_traces",async (job)=>{
             })
 
             await vectorStore.addDocuments(documents);
-
-
-
-
-
-
-
-
 
         }catch(error){
             console.log("Trace embedding failed bg worker")

@@ -8,8 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { mainFunction } from "./vector-store/init-queue"
-
+import { Init_Queue } from './vector-store/init-queue';
 import {
     Trace,
     Step,
@@ -28,25 +27,28 @@ export class TraceRecorder {
     private outputDir: string;
     private autoSave: boolean;
     private stepStartTime: number = 0;
+    // Instantiate once to reuse Redis connection
+    private indexQueue: Init_Queue | null = null; 
 
     constructor(
         agentId: string,
         taskId: string,
-        options: {
-            outputDir?: string;
-            autoSave?: boolean;
-        } = {}
+        options: { outputDir?: string; autoSave?: boolean; useIndexing?: boolean } = {}
     ) {
         this.trace = createTrace(agentId, taskId);
         this.outputDir = options.outputDir || './traces';
         this.autoSave = options.autoSave ?? true;
 
-        // Ensure output directory exists
         if (!fs.existsSync(this.outputDir)) {
             fs.mkdirSync(this.outputDir, { recursive: true });
         }
-    }
 
+        // Optional: Initialize queue only if needed
+        if (options.useIndexing) {
+             // We pass dummy data now, but actual data in save()
+             this.indexQueue = new Init_Queue({ traceId: '', agentId: '', tracePath: '' });
+        }
+    }
     /**
      * Get the current trace
      */
@@ -135,6 +137,9 @@ export class TraceRecorder {
 
         return step;
     }
+
+
+    
 
     /**
      * Record a decision step
@@ -270,12 +275,32 @@ export class TraceRecorder {
      */
     save(): string {
         const filename = `${this.trace.traceId}.json`;
-        const filepath = path.join(this.outputDir, filename);
+        const filepath = path.resolve(this.outputDir, filename); // Use absolute path
 
+        // 1. Sync write to ensure file exists
         fs.writeFileSync(filepath, JSON.stringify(this.trace, null, 2));
+
+        // 2. Trigger background task
+        this.triggerIndexing(filepath);
 
         return filepath;
     }
+
+    private async triggerIndexing(filepath: string) {
+        try {
+            // Update the queue instance with fresh data and fire
+            const queue = new Init_Queue({
+                traceId: this.trace.traceId,
+                agentId: this.trace.agentId,
+                tracePath: filepath
+            });
+            await queue.initQueue();
+            console.log(`[TraceRecorder] Step indexed for trace: ${this.trace.traceId}`);
+        } catch (err) {
+            console.error("[TraceRecorder] Background indexing failed:", err);
+        }
+    }
+
 
     /**
      * Load a trace from disk
@@ -304,19 +329,6 @@ export class TraceRecorder {
     private deepClone<T>(obj: T): T {
         return JSON.parse(JSON.stringify(obj));
     }
-
-    /**
-     * Add the trace to the BullMQ queue for Qdrant processing
-     */
-    private async queueTraceForIndexing(filePath: string) {
-        try {
-            mainFunction
-            console.log(`[TraceRecorder] Trace ${this.trace.traceId} queued for indexing.`);
-        } catch (error) {
-            console.error(`[TraceRecorder] Failed to queue trace:`, error);
-        }
-    }
-
 
 
 
