@@ -33,14 +33,18 @@
     "author": "",
     "license": "MIT",
     "dependencies": {
+        "@google/generative-ai": "^0.24.1",
         "@langchain/google-genai": "^2.1.18",
         "@langchain/qdrant": "^1.0.1",
         "@langchain/textsplitters": "^1.0.1",
+        "@qdrant/js-client-rest": "^1.16.2",
         "bullmq": "^5.69.1",
         "chalk": "^4.1.2",
         "commander": "^11.1.0",
         "dotenv": "^17.3.1",
         "inquirer": "^8.2.6",
+        "langchain": "^1.2.24",
+        "mathjs": "^15.1.1",
         "uuid": "^9.0.1",
         "yaml": "^2.3.4"
     },

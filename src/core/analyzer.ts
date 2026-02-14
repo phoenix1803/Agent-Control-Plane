@@ -1,3 +1,7 @@
+
+
+
+
 /**
  * Agent Control Plane - Memory & Step Analyzer
  * 
@@ -12,10 +16,18 @@ import {
     Trace,
     Step,
     ToolStep,
-    AnalysisWarning,
-    AnalysisReport,
+    // AnalysisWarning,
+    // AnalysisReport,
 } from './types';
 import { TraceRecorder } from './trace-recorder';
+
+import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
+import { QdrantVectorStore } from '@langchain/qdrant';
+import { PromptTemplate } from "@langchain/core/prompts"
+import * as math from 'mathjs';
+
+
+
 
 export interface AnalyzerConfig {
     maxStepsWarning: number;
@@ -25,43 +37,229 @@ export interface AnalyzerConfig {
     longDurationThreshold: number;
 }
 
-const DEFAULT_CONFIG: AnalyzerConfig = {
-    maxStepsWarning: 10,
-    maxStepsCritical: 20,
-    memoryGrowthThreshold: 5,
-    repeatedToolThreshold: 3,
-    longDurationThreshold: 5000,
-};
 
-export class TraceAnalyzer {
-    private trace: Trace;
-    private config: AnalyzerConfig;
 
-    constructor(trace: Trace, config: Partial<AnalyzerConfig> = {}) {
+export interface AnalysisWarning {
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  details?: any;
+  stepNumbers?: number[];
+  llmAdjusted?: boolean; // True if Gemini modified this
+}
+
+export interface SmartRecommendation {
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high';
+  codeExample?: string;
+  learnedFromTraceId?: string;
+}
+
+
+
+export interface RootCause{
+    issue:string;
+    casue:string;
+    evidence:string[];
+    serverity:"low"|"medium"|"high"|"critical";
+
+}
+
+
+export interface DynamicThresholds {
+    steps:{warning:number,critical:number}
+    duration:{warning:number;critical:number}
+    memoryGrowth:{warning:number;critical:number}
+    repeatedCalls:{warning:number;critical:number}
+    errorRate:{warning:number;critical:number}
+
+
+    source:'learned_from_history' | 'agent_classification' | 'statistical_baseline' | 'conservative_default';
+    confidence: number;
+    basedOnTraceCount: number;
+}
+
+
+export interface AnalysisReport {
+  traceId: string;
+  timestamp: string;
+  summary: {
+    totalSteps: number;
+    totalDuration: number;
+    status: string;
+    agentType?: string;
+  };
+  thresholds: {
+    used: DynamicThresholds;
+    explanation: string;
+  };
+  // Layer 1: Rule-based
+  warnings: AnalysisWarning[];
+  // Layer 2: LLM-based
+  insights?: string[];
+  rootCauses?: RootCause[];
+  recommendations?: SmartRecommendation[];
+  similarTracesComparison?: string;
+}
+
+
+// hardcoded analyzer but we need a dynamic analyzer for jget the effiecent analysis
+// const DEFAULT_CONFIG: AnalyzerConfig = {
+//     maxStepsWarning: 10,
+//     maxStepsCritical: 20,
+//     memoryGrowthThreshold: 5,
+//     repeatedToolThreshold: 3,
+//     longDurationThreshold: 5000,
+// };
+
+
+
+
+export class AgentAnalyzer {
+    private llm: ChatGoogleGenerativeAI;
+    private vectorStore: QdrantVectorStore;
+    private trace:Trace;
+    private thresholds:DynamicThresholds | null=null
+
+
+    public constructor(trace:Trace, vectorStore:QdrantVectorStore, llm:ChatGoogleGenerativeAI){
         this.trace = trace;
-        this.config = { ...DEFAULT_CONFIG, ...config };
+        this.vectorStore = vectorStore;
+        this.llm = llm
 
+    }
+
+
+    static async create(trace:Trace){
+        const llm = new ChatGoogleGenerativeAI({
+            model: "gemini-2.5-flash",
+            temperature: 0.1,
+            apiKey: process.env.GEMINI_API_KEY
+        })
+
+        const embedding = new GoogleGenerativeAIEmbeddings({model:"text-embedding-004",
+            apiKey:process.env.GEMINI_API_KEY
+        })
+
+        const vectorStore  = await QdrantVectorStore.fromExistingCollection(embedding,{
+            url:"http://localhost:6333",
+            collectionName:"agent-trace"
+        })
+
+        return new AgentAnalyzer(trace, vectorStore, llm);
+    }
+
+
+    public async mainAnalyzer(options?:{skipDeepAnalysis?:boolean}) : Promise<AnalysisReport>{
+
+        this.thresholds = await this.calcualteDynamicThreshold();
         
+        const quickAnalyzer = new QuickTraceAnalyzer(this.trace,this.thresholds)
+
+
+        const warning = quickAnalyzer.Quickanalyze()
+
+        let deepAnalysisResult = null;
+        if (!options?.skipDeepAnalysis){
+            deepAnalysisResult = await this.RunDeepAnalysis(warning)
+        }
+
+
+        return this.generateFinalReport(warning, deepAnalysisResult)
+    }
+
+
+    public RunDeepAnalysis(warning:AnalysisReport){
+        return {
+        }
+    }
+
+    private getTraceSummary(trace: Trace): string {
+    return `Agent ${trace.agentId} attempt to ${trace.goal}. Used tools: ${trace.metadata.toolsUsed.join(', ')}. Outcome: ${trace.status}`;
+  }
+    
+    public getThresholdsFromHistory():Promise<DynamicThresholds>{
+        try{
+            const results = await this.vectorStore.similaritySearch(this.getTraceSummary(this.trace),50, // k
+        {
+            must: [
+                { key: "metadata.agentId", match: { value: this.trace.agentId } },
+                { key: "metadata.status", match: { value: "completed" } }
+            ]
+        });
+
+        if (results.length < 10) return null;
+        const steps = results.map(doc => doc.metadata.stepCount);
+        const durations = results.map(doc => doc.metadata.duration);
+
+        return {
+        steps: {
+          warning: math.quantileSeq(steps, 0.75) as number,
+          critical: math.quantileSeq(steps, 0.95) as number
+        },
+        duration: {
+          warning: math.quantileSeq(durations, 0.75) as number,
+          critical: math.quantileSeq(durations, 0.95) as number
+        },
 
 
 
 
 
+
+
+    
 
     }
 
-    /**
-     * Load analyzer from trace file
-     */
-    static fromFile(tracePath: string, config?: Partial<AnalyzerConfig>): TraceAnalyzer {
-        const trace = TraceRecorder.load(tracePath);
-        return new TraceAnalyzer(trace, config);
+    public getThresholdsFromClassification(){
+
     }
 
+    public getConservativeDefaults(){
+
+    }
+    
+
+    private async calculateDynamicThresholds(): Promise<DynamicThresholds> {
+        // Strategy A: RAG - Learn from similar successful traces
+        const ragThresholds = await this.getThresholdsFromHistory();
+        if (ragThresholds && ragThresholds.confidence > 0.7) {
+        return ragThresholds;
+        }
+
+        // Strategy B: Classification - Ask Gemini what kind of agent this is
+        const classThresholds = await this.getThresholdsFromClassification();
+        if (classThresholds) {
+        return classThresholds;
+        }
+
+        // Strategy C: Statistical - Look at this specific agent's raw history (if available)
+        // (Skipped implementation for brevity, logic similar to A)
+
+        // Strategy D: Fallback
+        return this.getConservativeDefaults();
+    }
+
+    public generateFinalReport(warning:AnalysisReport,deepAnalysisResult:AnalysisReport){
+        return {}
+    }
+
+}
 
 
 
 
+
+export class QuickTraceAnalyzer {
+    private trace: Trace;
+    private config: DynamicThresholds;
+
+    constructor(trace: Trace, {config: DynamicThresholds} = {}) {
+        this.trace = trace;
+        this.config = config;
+    }
 
 
 
@@ -70,32 +268,32 @@ export class TraceAnalyzer {
     /**
      * Run full analysis
      */
-    analyze(): AnalysisReport {
+    Quickanalyze(): AnalysisReport {
         const warnings: AnalysisWarning[] = [];
 
         // Check step count
-        warnings.push(...this.checkStepCount());
+        warnings.push(...this.QuickcheckStepCount());
 
         // Check memory growth
-        warnings.push(...this.checkMemoryGrowth());
+        warnings.push(...this.QuickcheckMemoryGrowth());
 
         // Check repeated tool calls
-        warnings.push(...this.checkRepeatedToolCalls());
+        warnings.push(...this.QuickcheckRepeatedToolCalls());
 
         // Check for unused memory
-        warnings.push(...this.checkUnusedMemory());
+        warnings.push(...this.QuickcheckUnusedMemory());
 
         // Check for long durations
-        warnings.push(...this.checkLongDurations());
+        warnings.push(...this.QuickcheckLongDurations());
 
         // Check error rate
-        warnings.push(...this.checkErrorRate());
+        warnings.push(...this.QuickcheckErrorRate());
 
         // Generate summary
-        const summary = this.generateSummary();
+        const summary = this.QuickgenerateSummary();
 
         // Generate recommendations
-        const recommendations = this.generateRecommendations(warnings);
+        const recommendations = this.QuickgenerateRecommendations(warnings);
 
         return {
             traceId: this.trace.traceId,
@@ -108,7 +306,7 @@ export class TraceAnalyzer {
     /**
      * Check if step count is high
      */
-    private checkStepCount(): AnalysisWarning[] {
+    private QuickcheckStepCount(): AnalysisWarning[] {
         const warnings: AnalysisWarning[] = [];
         const stepCount = this.trace.steps.length;
 
@@ -140,7 +338,7 @@ export class TraceAnalyzer {
     /**
      * Check for memory growth without usage
      */
-    private checkMemoryGrowth(): AnalysisWarning[] {
+    private QuickcheckMemoryGrowth(): AnalysisWarning[] {
         const warnings: AnalysisWarning[] = [];
         const memorySizes: { step: number; size: number }[] = [];
 
@@ -176,7 +374,7 @@ export class TraceAnalyzer {
     /**
      * Check for repeated tool calls (same tool, same parameters)
      */
-    private checkRepeatedToolCalls(): AnalysisWarning[] {
+    private QuickcheckRepeatedToolCalls(): AnalysisWarning[] {
         const warnings: AnalysisWarning[] = [];
         const toolCalls: Map<string, number[]> = new Map();
 
@@ -214,7 +412,7 @@ export class TraceAnalyzer {
     /**
      * Check for memory that was written but never read
      */
-    private checkUnusedMemory(): AnalysisWarning[] {
+    private QuickcheckUnusedMemory(): AnalysisWarning[] {
         const warnings: AnalysisWarning[] = [];
 
         // Get final memory keys
@@ -262,7 +460,7 @@ export class TraceAnalyzer {
     /**
      * Check for steps with long duration
      */
-    private checkLongDurations(): AnalysisWarning[] {
+    private QuickcheckLongDurations(): AnalysisWarning[] {
         const warnings: AnalysisWarning[] = [];
         const slowSteps: number[] = [];
 
@@ -291,7 +489,7 @@ export class TraceAnalyzer {
     /**
      * Check error rate
      */
-    private checkErrorRate(): AnalysisWarning[] {
+    private QuickcheckErrorRate(): AnalysisWarning[] {
         const warnings: AnalysisWarning[] = [];
         const errorSteps = this.trace.steps.filter(s => s.stepType === 'error');
         const errorRate = errorSteps.length / this.trace.steps.length;
@@ -328,7 +526,7 @@ export class TraceAnalyzer {
     /**
      * Generate summary statistics
      */
-    private generateSummary(): AnalysisReport['summary'] {
+    private QuickgenerateSummary(): AnalysisReport['summary'] {
         const startTime = new Date(this.trace.startTime).getTime();
         const endTime = this.trace.endTime ? new Date(this.trace.endTime).getTime() : Date.now();
 
@@ -354,7 +552,7 @@ export class TraceAnalyzer {
     /**
      * Generate recommendations based on warnings
      */
-    private generateRecommendations(warnings: AnalysisWarning[]): string[] {
+    private QuickgenerateRecommendations(warnings: AnalysisWarning[]): string[] {
         const recommendations: string[] = [];
 
         for (const warning of warnings) {
@@ -385,8 +583,18 @@ export class TraceAnalyzer {
             }
         }
 
+        
+
         // Deduplicate
         return [...new Set(recommendations)];
+    }
+
+    /**
+     * Load analyzer from trace file
+     */
+    static fromFile(tracePath: string, config?: Partial<AnalyzerConfig>): QuickTraceAnalyzer {
+        const trace = TraceRecorder.load(tracePath);
+        return new QuickTraceAnalyzer(trace, config);
     }
 }
 
@@ -394,6 +602,24 @@ export class TraceAnalyzer {
  * Quick analysis function
  */
 export function analyzeTrace(tracePath: string): AnalysisReport {
-    const analyzer = TraceAnalyzer.fromFile(tracePath);
-    return analyzer.analyze();
+    const analyzer = QuickTraceAnalyzer.fromFile(tracePath);
+    return analyzer.Quickanalyze();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
