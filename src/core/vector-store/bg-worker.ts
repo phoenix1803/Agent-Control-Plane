@@ -2,7 +2,7 @@
 
 import { Worker } from "bullmq";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai'
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 
 import { QdrantVectorStore } from "@langchain/qdrant"
 import fs  from 'fs'
@@ -41,8 +41,8 @@ const worker = new Worker("upload_traces",async (job)=>{
 
             // init for embeddings
             const embedding = new GoogleGenerativeAIEmbeddings({
-                model:"text-embedding-004",
-                apiKey:process.env.GOOGLE_API_KEY
+                model:"embedding-001",
+                apiKey:process.env.GEMINI_API_KEY
             })
 
             const vectorStore = await QdrantVectorStore.fromExistingCollection(embedding,{
@@ -51,15 +51,24 @@ const worker = new Worker("upload_traces",async (job)=>{
             })
 
             await vectorStore.addDocuments(documents);
+            console.log("Trace embedding added in qdrantDb+B")
+            
 
         }catch(error){
-            console.log("Trace embedding failed bg worker")
+            console.log("Trace embedding failed bg worker", error)
         }
 
 
 
     }
-})
+},  {
+    concurrency: 5,
+    connection: {
+      host: "localhost",
+      port: 6379,
+      password: "ITSMEBBy",
+    },
+  })
 
 
 

@@ -300,6 +300,7 @@ export class TraceRecorder {
             console.error("[TraceRecorder] Background indexing failed:", err);
         }
     }
+    
 
 
     /**
@@ -329,9 +330,4 @@ export class TraceRecorder {
     private deepClone<T>(obj: T): T {
         return JSON.parse(JSON.stringify(obj));
     }
-
-
-
-
-
 }

@@ -19,7 +19,7 @@ export class Init_Queue {
             connection: {
                 host: "localhost",
                 port: 6379,
-                password: process.env.REDIS_PASSWORD,
+                password: "ITSMEBBy",
             }
         });
         
@@ -29,6 +29,8 @@ export class Init_Queue {
             agentId:this.agentId,
             tracePath:this.tracePath
         })
+
+        console.log("file path added in the queue")
 
 
     }
