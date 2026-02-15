@@ -1,7 +1,3 @@
-
-
-
-
 /**
  * Agent Control Plane - Memory & Step Analyzer
  * 
@@ -37,7 +33,6 @@ export interface Analyzerthresholds {
     repeatedToolThreshold: number;
     longDurationThreshold: number;
 }
-
 
 
 export interface AnalysisWarning {
@@ -159,16 +154,16 @@ export class AgentAnalyzer {
 
         const warning = quickAnalyzer.Quickanalyze()
 
-        let deepAnalysisResult;;
+        let deepAnalysisResult;
         if (!options?.skipDeepAnalysis){
-            deepAnalysisResult = await this.runDeepAnalysis(warning)
+            deepAnalysisResult = await this.runDeepAnalysis(warning.warnings)
         }
 
         return this.generateFinalReport(warning, deepAnalysisResult)
     }
 
 
-public async runDeepAnalysis(currentWarnings: AnalysisWarning[]) {
+public async runDeepAnalysis(currentWarnings: AnalysisWarning[]): Promise<any> {
     console.log("Starting Deep Analysis...");
 
     // 1. RETRIEVE: Get similar traces from Qdrant
