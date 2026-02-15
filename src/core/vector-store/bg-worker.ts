@@ -1,18 +1,19 @@
 // Qdrant client & embedding logic
 
-import { Worker } from "bullmq";
+import { childSend, Worker } from "bullmq";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
-
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 import { QdrantVectorStore } from "@langchain/qdrant"
 import fs  from 'fs'
+import path from "path";
 
 import "dotenv/config"
+import { Document } from "@langchain/core/documents";
 
 
 
 
-
+process.env.HF_HOME = path.join(process.cwd(), '.hf_cache');
 const worker = new Worker("upload_traces",async (job)=>{
     if (job.name === "uplaod_traces_job"){
         console.log("Enterd in worker")
@@ -22,37 +23,58 @@ const worker = new Worker("upload_traces",async (job)=>{
             const TraceDataStr = JSON.stringify(TraceData) 
             // init
             const textSplitters = new RecursiveCharacterTextSplitter({
-                chunkSize:300,
+                chunkSize:500,
                 chunkOverlap:40
             })
 
             const chunks = await textSplitters.splitText(TraceDataStr)
             console.log(chunks)
-
-            const documents = chunks.map((chunk)=>({
-                pageContent:chunk,
-                metadata:{
-                    traceId:job.data.traceId,
-                    agentId:job.data.agentId,
-                    timestamp: new Date().toString() 
-                }
-            }))
-
-
+            
             // init for embeddings
-            const embedding = new GoogleGenerativeAIEmbeddings({
-                model:"embedding-001",
-                apiKey:process.env.GEMINI_API_KEY
-            })
+            const embedding = new HuggingFaceTransformersEmbeddings({
+                model: "Xenova/all-MiniLM-L6-v2", // 384 dimensions, fast & accurate
+                // Alternative models:
+                // "Xenova/all-mpnet-base-v2" - 768 dimensions, more accurate but slower
+                // "Xenova/paraphrase-MiniLM-L3-v2" - 384 dimensions, fastest
+            });
 
             const vectorStore = await QdrantVectorStore.fromExistingCollection(embedding,{
                 url:"http://localhost:6333",
                 collectionName:"agent-trace"
             })
 
-            await vectorStore.addDocuments(documents);
-            console.log("Trace embedding added in qdrantDb+B")
-            
+            const BATCH_SIZE = 50;
+            for(let i=0;i<chunks.length;i+=BATCH_SIZE){
+                const batch = chunks.slice(i, i+BATCH_SIZE)
+                const documents=[]
+
+                for (const chunk of batch){
+                    documents.push({
+
+                        pageContent:chunk,
+                        metadata: {
+                            traceId: job.data.traceId,
+                            agentId: job.data.agentId,
+                            timestamp: new Date().toISOString()
+                        }
+                        
+
+                    })
+                }
+                await vectorStore.addDocuments(documents)
+
+
+            }
+
+            console.log("\n Success!");
+            return { success: true, chunks: chunks.length };
+
+
+
+
+
+
+
 
         }catch(error){
             console.log("Trace embedding failed bg worker", error)
@@ -62,7 +84,7 @@ const worker = new Worker("upload_traces",async (job)=>{
 
     }
 },  {
-    concurrency: 5,
+    concurrency: 1,
     connection: {
       host: "localhost",
       port: 6379,
