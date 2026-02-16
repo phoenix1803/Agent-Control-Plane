@@ -12,7 +12,8 @@ import {
     Trace,
     Step,
     ToolStep,
-    // AnalysisWarning,
+    QuickAnalysisReport,
+    QucikAnalysisWarning,
     // AnalysisReport,
 } from './types';
 import { TraceRecorder } from './trace-recorder';
@@ -82,7 +83,10 @@ export interface AnalysisReport {
     totalSteps: number;
     totalDuration: number;
     status: string;
+    llmCalls: number;
+    toolCalls: number;
     agentType?: string;
+    memoryPeakSize:string;
   };
   thresholds: {
     used: DynamicThresholds;
@@ -124,7 +128,7 @@ export class AgentAnalyzer {
 
     }
 
-
+    // Only for setup of all three trance vectorStore and llm
     static async create(trace:Trace){
         const llm = new ChatGoogleGenerativeAI({
             model: "gemini-2.5-flash",
@@ -144,7 +148,7 @@ export class AgentAnalyzer {
         return new AgentAnalyzer(trace, vectorStore, llm);
     }
 
-
+    // whole excecution is based on this public method
     public async mainAnalyzer(options?:{skipDeepAnalysis?:boolean}) : Promise<AnalysisReport>{
 
         this.thresholds = await this.calculateDynamicThresholds();
@@ -459,8 +463,26 @@ public async runDeepAnalysis(currentWarnings: AnalysisWarning[]): Promise<any> {
         return this.getConservativeDefaults();
     }
 
-    public generateFinalReport(warning:AnalysisReport,deepAnalysisResult:AnalysisReport){
-        return {}
+    public generateFinalReport(warning:QuickAnalysisReport,deepAnalysisResult:any): AnalysisReport {
+        return {
+            traceId: this.trace.traceId,
+            timestamp: new Date().toISOString(),
+            summary: {
+                totalSteps: this.trace.steps.length,
+                totalDuration: this.getDuration(),
+                status: this.trace.status,
+                agentType: this.trace.agentType,
+            },
+            thresholds: {
+                used: this.thresholds!,
+                explanation: `Thresholds determined from ${this.thresholds?.source}`,
+            },
+            warnings: warning,
+            insights: deepAnalysisResult?.insights || [],
+            rootCauses: deepAnalysisResult?.rootCauses || [],
+            recommendations: deepAnalysisResult?.recommendations || [],
+            similarTracesComparison: deepAnalysisResult?.similarTracesComparison,
+        };
     }
 
 }
@@ -480,7 +502,7 @@ export class QuickTraceAnalyzer {
     /**
      * Run full analysis
      */
-    Quickanalyze(): AnalysisReport {
+    Quickanalyze(): QuickAnalysisReport {
         const warnings: AnalysisWarning[] = [];
 
         // Check step count
@@ -804,7 +826,7 @@ export class QuickTraceAnalyzer {
     /**
      * Load analyzer from trace file
      */
-    static fromFile(tracePath: string, thresholds?: Partial<Analyzerthresholds>): QuickTraceAnalyzer {
+    static fromFile(tracePath: string, thresholds: DynamicThresholds): QuickTraceAnalyzer {
         const trace = TraceRecorder.load(tracePath);
         return new QuickTraceAnalyzer(trace, thresholds);
     }
