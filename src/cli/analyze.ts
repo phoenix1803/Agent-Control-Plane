@@ -193,7 +193,7 @@ function displayReport(report: AnalysisReport): void {
     console.log(`  Confidence:       ${used.confidence}`);
     console.log(`  Based On Traces:  ${used.basedOnTraceCount}`);
 
-    // Print nested objects safely
+
     const thresholdObjects = [
       "memoryGrowth",
       "repeatedCalls",
@@ -216,9 +216,6 @@ function displayReport(report: AnalysisReport): void {
     }
   }
 
-  // ------------------------
-  // If nothing exists
-  // ------------------------
   if (
     !report.recommendations?.length &&
     !report.warnings?.length &&
