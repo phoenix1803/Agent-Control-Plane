@@ -19,7 +19,7 @@ export class Init_Queue {
             connection: {
                 host: "localhost",
                 port: 6379,
-                password: "ITSMEBBy",
+                password: process.env.REDIS_PASSWORD,
             }
         });
         
@@ -31,8 +31,6 @@ export class Init_Queue {
         })
 
         console.log("file path added in the queue")
-
-
     }
 
 }

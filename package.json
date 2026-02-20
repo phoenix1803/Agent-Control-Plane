@@ -11,7 +11,7 @@
         "build": "tsc",
         "start": "ts-node src/agent/run.ts",
         "run:agent": "ts-node src/agent/run.ts && ts-node src/core/vector-store/bg-worker.ts",
-        
+        "run:worker": "ts-node src/core/vector-store/bg-worker.ts",
         "replay": "ts-node src/agent/replay.ts",
         "inspect": "ts-node src/cli/inspect.ts",
         "replay:control": "ts-node src/cli/replay-control.ts",

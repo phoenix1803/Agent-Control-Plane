@@ -6,6 +6,7 @@ import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddin
 import { QdrantVectorStore } from "@langchain/qdrant"
 import fs  from 'fs'
 import path from "path";
+import 'dotenv/config'
 
 import "dotenv/config"
 import { Document } from "@langchain/core/documents";
@@ -88,7 +89,7 @@ const worker = new Worker("upload_traces",async (job)=>{
     connection: {
       host: "localhost",
       port: 6379,
-      password: "ITSMEBBy",
+      password: process.env.REDIS_PASSWORD,
     },
   })
 

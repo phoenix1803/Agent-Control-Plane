@@ -1,7 +1,3 @@
-
-
-
-
 /**
  * Agent Control Plane - Memory & Step Analyzer
  * 
@@ -26,8 +22,12 @@ import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from '@langchain
 import { QdrantVectorStore } from '@langchain/qdrant';
 import { PromptTemplate } from "@langchain/core/prompts"
 import * as math from 'mathjs';
+import * as fs from 'fs';
+import * as path from 'path';
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 
 import { StringOutputParser } from "@langchain/core/output_parsers";
+
 
 
 
@@ -137,12 +137,19 @@ export class AgentAnalyzer {
         const llm = new ChatGoogleGenerativeAI({
             model: "gemini-2.5-flash",
             temperature: 0.1,
-            apiKey: process.env.GEMINI_API_KEY
+            apiKey: process.env.GOOGLE_API_KEY
         })
 
-        const embedding = new GoogleGenerativeAIEmbeddings({model:"text-embedding-004",
-            apiKey:process.env.GEMINI_API_KEY
-        })
+        // const embedding = new GoogleGenerativeAIEmbeddings({model:"gemini-embedding-001",
+        //     apiKey:process.env.GOOGLE_API_KEY
+        // })
+
+        const embedding = new HuggingFaceTransformersEmbeddings({
+                model: "Xenova/all-MiniLM-L6-v2", // 384 dimensions, fast & accurate
+                // Alternative models:
+                // "Xenova/all-mpnet-base-v2" - 768 dimensions, more accurate but slower
+                // "Xenova/paraphrase-MiniLM-L3-v2" - 384 dimensions, fastest
+            });
 
         const vectorStore  = await QdrantVectorStore.fromExistingCollection(embedding,{
             url:"http://localhost:6333",
@@ -174,15 +181,11 @@ export class AgentAnalyzer {
 public async runDeepAnalysis(currentWarnings: AnalysisWarning[]): Promise<any> {
     console.log("Starting Deep Analysis...");
 
-    // 1. RETRIEVE: Get similar traces from Qdrant
-    // We search for traces that are semantically similar to the current one
     const similarDocs = await this.vectorStore.similaritySearch(
         this.getTraceSummary(this.trace),
-        3 
+        3 // top three k results 
     );
     
-    // 2. FORMAT: Prepare the context for the LLM
-    // We convert the retrieved documents into a string the LLM can read
     const similarTracesContext = similarDocs.map((doc, i) => {
         const meta = doc.metadata;
         return `
@@ -195,7 +198,6 @@ public async runDeepAnalysis(currentWarnings: AnalysisWarning[]): Promise<any> {
         `;
     }).join("\n");
 
-    // 3. PROMPT: Construct the "Mega-Prompt"
     const prompt = PromptTemplate.fromTemplate(`
       You are an Expert AI Agent Debugger. You are analyzing a specific execution trace.
       
@@ -310,7 +312,6 @@ public async runDeepAnalysis(currentWarnings: AnalysisWarning[]): Promise<any> {
         return null;
 
     }
-
 
 } 
     private getDuration(): number {
@@ -467,7 +468,7 @@ public async runDeepAnalysis(currentWarnings: AnalysisWarning[]): Promise<any> {
         return this.getConservativeDefaults();
     }
 
-    public generateFinalReport(warning:QuickAnalysisReport,deepAnalysisResult:any): AnalysisReport {
+    public  generateFinalReport(warning:QuickAnalysisReport,deepAnalysisResult:any): AnalysisReport {
         return {
             traceId: this.trace.traceId,
             timestamp: new Date().toISOString(),
@@ -851,7 +852,26 @@ export class QuickTraceAnalyzer {
 /**
  * Quick analysis function
  */
-export function analyzeTrace(tracePath: string): QuickAnalysisReport {
-    const analyzer = QuickTraceAnalyzer.fromFile(tracePath);
-    return analyzer.Quickanalyze();
+// export function analyzeTrace(tracePath: string): QuickAnalysisReport {
+//     const Quickanalyzer = QuickTraceAnalyzer.fromFile(tracePath);
+//     return Quickanalyzer.Quickanalyze();
+// }
+
+// Main function which execute everything
+
+export async function AnalyzeTrace(tracePath:string){
+    try{
+        let skipDeepAnalysis = false;
+        const trace = await fs.promises.readFile(tracePath,"utf-8")
+        const traceJson:Trace = JSON.parse(trace)
+
+
+        const deepAnalyze = await AgentAnalyzer.create(traceJson)
+        return deepAnalyze.mainAnalyzer({skipDeepAnalysis})
+        
+    }catch(err){
+        console.log("Error while fetching the trace file")
+    }
 }
+
+
