@@ -391,3 +391,5 @@ Note: Live tracing and inline assertions are planned.
 --- 
 License
 MIT
+
+For the google hack
