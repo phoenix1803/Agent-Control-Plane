@@ -245,7 +245,7 @@ export interface TestResult {
 // ANALYSIS
 // ============================================
 
-export interface AnalysisWarning {
+export interface QucikAnalysisWarning {
     type: 'high_step_count' | 'memory_growth' | 'repeated_tool_calls' |
     'unused_memory' | 'long_duration' | 'error_rate';
     severity: 'info' | 'warning' | 'critical';
@@ -254,16 +254,17 @@ export interface AnalysisWarning {
     stepNumbers?: number[];
 }
 
-export interface AnalysisReport {
+export interface QuickAnalysisReport {
     traceId: string;
     summary: {
         totalSteps: number;
         totalDuration: number;
         llmCalls: number;
         toolCalls: number;
-        errors: number;
-        memoryPeakSize: number;
+        status: string;
+        agentType?: string;
+        memoryPeakSize:number;
     };
-    warnings: AnalysisWarning[];
+    warnings: QucikAnalysisWarning[];
     recommendations: string[];
 }
